@@ -1,0 +1,41 @@
+- hosts: dnac_servers
+  gather_facts: false
+  tasks:
+    
+  - name: Receive site details
+    cisco.dnac.site_info:
+      name: "Global/Amsterdam/CiscoLive"
+    register: site_result
+  
+  - name: Set Site ID variable
+    ansible.builtin.set_fact:
+      site_id: "{{ site_result.dnac_response.response[0].id }}"
+
+  - name: Add CSR1000v to the inventory
+    cisco.dnac.network_device:
+      state: present
+      type: "NETWORK_DEVICE"
+      ipAddress:
+      - 198.18.133.90
+      - 198.18.129.141
+      cliTransport: "ssh"
+      userName: "admin"
+      password: "C1sco12345"
+      snmpVersion: "v2"
+      snmpROCommunity: "public"
+      snmpRWCommunity: "public"
+      snmpRetry: 3
+      snmpTimeout: 3
+      enablePassword: "C1sco12345"
+      computeDevice: false
+
+  - name: Pause
+    pause:
+      seconds: 15
+
+  - name: Assign the device to Amsterdam site
+    cisco.dnac.assign_device_to_site:
+      device:
+      - ip: "198.18.129.141"
+      - ip: "198.18.133.90"
+      siteId: "{{ site_id }}"

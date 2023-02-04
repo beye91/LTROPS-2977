@@ -1,0 +1,82 @@
+---
+apic:
+  tenants:
+    - name: CiscoLive
+
+      vrfs:
+        - name: CiscoLive-vrf
+
+      bridge_domains:
+        - name: WEB-BD
+          vrf: CiscoLive-vrf
+          subnets:
+            - ip: 172.16.100.1/24
+
+        - name: APP-BD
+          vrf: CiscoLive-vrf
+          subnets:
+            - ip: 172.16.101.1/24
+
+        - name: DB-BD
+          vrf: CiscoLive-vrf
+          subnets:
+            - ip: 172.16.102.1/24
+
+      application_profiles:
+        - name: WEP-APP
+          endpoint_groups:
+            - name: WEB-EPG
+              bridge_domain: WEB-BD
+              physical_domains:
+                - all-physical-devices
+              static_ports:
+                - node_id: 102
+                  port: 1
+                  vlan: 200
+              contracts:
+                consumers:
+                  - permit-to-vlan-101
+
+            - name: APP-EPG
+              bridge_domain: APP-BD
+              physical_domains:
+                - all-physical-devices
+              static_ports:
+                - node_id: 102
+                  port: 2
+                  vlan: 201
+              contracts:
+                providers:
+                  - permit-to-vlan-101
+
+            - name: DB-EPG
+              bridge_domain: DB-BD
+              physical_domains:
+                - all-physical-devices
+              static_ports:
+                - node_id: 102
+                  port: 3
+                  vlan: 202
+
+      l3outs:
+        - name: l3out-to-external-router
+          vrf: CiscoLive-vrf
+          domain: all-tenant-vrfs
+          ospf:
+            area: backbone
+            area_type: regular
+            area_cost: 1
+          nodes:
+            - node_id: 101
+              router_id: 101.101.101.101
+              router_id_as_loopback: true
+              interfaces:
+                - port: 7
+                  ip: 172.16.16.1/30
+
+            - node_id: 102
+              router_id: 102.102.102.102
+              router_id_as_loopback: true
+              interfaces:
+                - port: 7
+                  ip: 172.16.16.5/30

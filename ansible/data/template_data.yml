@@ -1,0 +1,6 @@
+template_name: "L3OUT_OSPF"
+template_language: "VELOCITY"
+template_project_name: "Templates-by-Ansible"
+template_productFamily: "Routers"
+template_softwareType: "IOS-XE"
+template_softwareVariant: "XE"

@@ -1,0 +1,25 @@
+- hosts: dnac_servers
+  gather_facts: false
+  tasks:
+  - name: Create area hierarchy
+    cisco.dnac.site_create:
+      site:
+        area:
+          name: Amsterdam
+          parentName: "Global"
+      type: "area"
+    register: site_creation
+
+  - name: Pause
+    pause:
+      seconds: 10
+
+  - name: Create building hierarchy
+    cisco.dnac.site_create:
+      site:
+        building:
+          name: CiscoLive
+          parentName: "Global/Amsterdam"
+          latitude: 52.377956
+          longitude: 4.897070
+      type: "building"

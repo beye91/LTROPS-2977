@@ -1,0 +1,13 @@
+devices:
+  CSR1000V-01:
+    type: iosxe
+    os: iosxe
+    credentials:
+      default:
+        username: admin
+        password: C1sco12345
+    connections:
+      cli:
+        protocol: ssh
+        ip: "198.18.133.90"
+        port: 22

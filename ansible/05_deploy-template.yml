@@ -1,0 +1,136 @@
+- hosts: dnac_servers
+  gather_facts: false
+  connection: local
+
+  tasks:
+
+#
+# Load variables
+#
+  - name: Load file with template variables
+    ansible.builtin.include_vars: 
+      file: data/template_data.yml
+
+  - name: Load file with router variables
+    ansible.builtin.include_vars: 
+      file: data/{{ router_name }}.yml
+
+#
+# Set timestamp
+#
+  - name: Get timestamp from the system
+    shell: "date +%Y-%m-%d%H-%M-%S"
+    register: tstamp
+
+  - name: Output timestamp 
+    debug: var=tstamp.stdout
+#
+# Project Creation
+#
+  - name: Create dayN-Templates project 
+    cisco.dnac.configuration_template_project:
+      state: present
+      createTime: 0
+      description: string
+      name: "{{ template_project_name }}"
+    register: configuration_template_project_result
+
+  - name: Set Task ID
+    ansible.builtin.set_fact:
+      project_task_id: "{{ configuration_template_project_result.dnac_response.response.taskId }}"
+
+  - name: Output project_task_id 
+    debug: var=project_task_id
+
+  - name: Get project task by id
+    cisco.dnac.task_info:
+      taskId: "{{ project_task_id }}"
+    register: result_project_task_id
+
+  - name: Set project ID
+    ansible.builtin.set_fact:
+      project_id: "{{ result_project_task_id.dnac_response.response.data }}"
+
+  - name: Output project_id 
+    debug: var=project_id
+#
+# Template Info / Config Section
+#
+  - name: Create an configuration_template_project
+    cisco.dnac.configuration_template_create:
+      name: "{{ template_name }}_{{ router_name }}_{{ tstamp.stdout }}"
+      templateContent: "{{ router_config }}"
+      language: "{{ template_language }}"
+      deviceTypes:
+        - productFamily: "{{ template_productFamily }}"
+      projectId: "{{ project_id }}"
+      softwareType: "{{ template_softwareType }}"
+      softwareVariant: "{{ template_softwareVariant }}"
+    register: configuration_template_project_result
+
+  - name: Set Task ID
+    ansible.builtin.set_fact:
+      task_id: "{{ configuration_template_project_result.dnac_response.response.taskId }}"
+
+  - name: Output task_id 
+    debug: var=task_id
+
+  - name: Pause
+    pause:
+      seconds: 10
+
+  - name: Get Task by id
+    cisco.dnac.task_info:
+      taskId: "{{ task_id }}"
+    register: result_task_id
+
+  - name: Set Template ID
+    ansible.builtin.set_fact:
+      template_id: "{{ result_task_id.dnac_response.response.data }}"
+
+  - name: Output template_id 
+    debug: var=template_id
+
+  - name: Create Versioning
+    cisco.dnac.configuration_template_version_create:
+      comments: "COMMITED_{{ tstamp.stdout }}"
+      templateId: "{{ template_id }}"
+    register: template_version_result
+
+#
+# Get the device infos
+#
+  - name: Get Network Device information
+    cisco.dnac.network_device_info:
+      managementIpAddress: [ "{{ router_ip }}" ]
+    register: network_device_info_result
+
+  - name: Output network_device_info_result 
+    debug: var=network_device_info_result
+
+  - name: Set Device ID
+    ansible.builtin.set_fact:
+      device_id: "{{ network_device_info_result.dnac_response.response[0].id }}"
+
+  - name: Output device_id 
+    debug: var=device_id
+
+#
+# Deploy template to device
+#
+  - name: Deploy dayN template on device
+    cisco.dnac.configuration_template_deploy:
+      forcePushTemplate: true
+      mainTemplateId: "{{ template_id }}"
+      targetInfo:
+      - id: "{{ device_id }}"
+        type: "MANAGED_DEVICE_UUID"
+      templateId: "{{ template_id }}"
+    register: template_deploy_result
+
+  - name: Output template_deploy_result 
+    debug: var=template_deploy_result
+
+  - name: Save output to a file 
+    local_action:
+      copy content="{{ template_deploy_result }}" dest="./template_deploy_result.log"

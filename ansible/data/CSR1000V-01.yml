@@ -1,0 +1,3 @@
+router_name: "CSR1000V-01"
+router_ip: "198.18.133.90"
+router_config: "router ospf 1\n router-id 172.16.16.2 \n int gi3\n ip address 172.16.16.2 255.255.255.0 \n ip ospf 1 area 0 \n no shutdown"

@@ -1,0 +1,71 @@
+- hosts: dnac_servers
+  gather_facts: false
+  connection: local
+
+  tasks:
+#
+# Get the device infos
+#
+  - name: Get Network Device information
+    cisco.dnac.network_device_info:
+      managementIpAddress: [ 198.18.133.90 ]
+    register: network_device_info_result
+
+  - name: Set Device ID
+    ansible.builtin.set_fact:
+      device_id: "{{ network_device_info_result.dnac_response.response[0].id }}"
+
+  - debug: var=device_id
+
+#
+# Execute commands on the device
+#
+  - name: Run command on a Device
+    cisco.dnac.command_runner_run_command:
+      commands:
+      - show ip bgp all sum 
+      deviceUuids:
+      - "{{ device_id }}"
+    register: command_runner
+
+  - name: Set Task ID
+    ansible.builtin.set_fact:
+      task_id: "{{ command_runner.dnac_response.response.taskId }}"
+
+  - debug: var=task_id
+#
+# Get Task ID & File ID
+#
+  - name: Get Task by id
+    cisco.dnac.task_info:
+      taskId: "{{ task_id }}"
+    register: result_task_id
+
+  - name: Set File ID
+    ansible.builtin.set_fact:
+      file_id_list: "{{ result_task_id.dnac_response.response.progress.splitlines()| map ('from_json') }}"
+  - debug: var=file_id_list
+
+  - name: Set File ID
+    ansible.builtin.set_fact:
+      file_id: "{{ file_id_list[0].fileId }}"
+  - debug: var=file_id
+#
+# Get File Info
+#
+  - name: Get results from File ID
+    cisco.dnac.file_info:
+     fileId: "{{ file_id }}"
+    register: file_id_result
+  - debug: var=file_id_result
+
+  - name: Set File ID
+    ansible.builtin.set_fact:
+      command_result: "{{ file_id_result.dnac_response.data.splitlines()| map ('from_json') }}"
+  - debug: var=command_result
+#
+# Save output to a file
+#
+  - name: Save output to a file 
+    local_action:
+      copy content="{{ command_result }}" dest="./command_result.log"
