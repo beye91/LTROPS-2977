@@ -1,0 +1,118 @@
+variables:
+  IMAGE_NAME_DNAC: $CI_REGISTRY_IMAGE/dnac  
+  IMAGE_TAG_DNAC: "1.0"
+  IMAGE_NAME_ACI: $CI_REGISTRY_IMAGE/aci  
+  IMAGE_TAG_ACI: "1.0"
+  TF_ROOT: ${CI_PROJECT_DIR}/terraform
+
+.dependencies_cache:
+  cache:
+    key: "${TF_ROOT}"
+    paths:
+      - "${TF_ROOT}/.terraform"
+    policy: pull
+
+stages:
+  - build
+  - validate
+  - plan
+  - apply
+  - destroy
+
+build_image:
+  stage: build
+  tags:
+    - shell-runner
+  script:
+    - docker build -t $IMAGE_NAME_DNAC:$IMAGE_TAG_DNAC docker/dnac/.
+    - docker build -t $IMAGE_NAME_ACI:$IMAGE_TAG_ACI docker/aci/.
+
+push_image:
+  stage: build
+  needs:
+    - build_image
+  tags:
+    - shell-runner
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker push $IMAGE_NAME_DNAC:$IMAGE_TAG_DNAC
+    - docker push $IMAGE_NAME_ACI:$IMAGE_TAG_ACI
+
+validate:
+  needs:
+    - push_image
+  stage: validate
+  image: $IMAGE_NAME_ACI:$IMAGE_TAG_ACI
+  environment: ACI
+  tags:
+    - docker-runner
+  extends: .dependencies_cache
+  cache:
+    policy: pull-push
+  before_script:
+    - cd terraform
+  script:
+      - chmod +x init_file.sh
+      - ./init_file.sh
+      - terraform validate
+
+plan:
+  needs:
+    - validate
+  stage: plan
+  image: $IMAGE_NAME_ACI:$IMAGE_TAG_ACI
+  environment: ACI
+  tags:
+    - docker-runner
+  extends: .dependencies_cache
+  before_script:
+    - cd terraform
+  script:
+      - chmod +x init_file.sh
+      - ./init_file.sh
+      - terraform plan -out=./output.tfplan
+      - terraform show -no-color -json output.tfplan > plan.json
+  artifacts:
+    paths:
+      - ${TF_ROOT}/plan.json
+    reports:
+      terraform: ${TF_ROOT}/plan.json
+
+apply:
+  stage: apply
+  image: $IMAGE_NAME_ACI:$IMAGE_TAG_ACI
+  environment: ACI
+  tags:
+    - docker-runner
+  extends: .dependencies_cache
+  before_script:
+    - cd terraform
+  script:
+      - chmod +x init_file.sh
+      - ./init_file.sh     
+      - terraform apply --auto-approve
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual
+
+destroy:
+  stage: destroy
+  image: $IMAGE_NAME_ACI:$IMAGE_TAG_ACI
+  environment: ACI
+  tags:
+    - docker-runner
+  extends: .dependencies_cache
+  before_script:
+    - cd terraform
+  script:
+      - chmod +x init_file.sh
+      - ./init_file.sh     
+      - terraform destroy --auto-approve
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual 

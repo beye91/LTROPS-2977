@@ -1,0 +1,78 @@
+variables:
+  IMAGE_NAME_DNAC: $CI_REGISTRY_IMAGE/dnac  
+  IMAGE_TAG_DNAC: "1.0"
+  IMAGE_NAME_ACI: $CI_REGISTRY_IMAGE/aci  
+  IMAGE_TAG_ACI: "1.0"
+
+stages:
+  - build
+  - validate
+  - execute
+
+build_image:
+  stage: build
+  tags:
+    - shell-runner
+  script:
+    - docker build -t $IMAGE_NAME_DNAC:$IMAGE_TAG_DNAC docker/dnac/.
+    - docker build -t $IMAGE_NAME_ACI:$IMAGE_TAG_ACI docker/aci/.
+
+push_image:
+  stage: build
+  needs:
+    - build_image
+  tags:
+    - shell-runner
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker push $IMAGE_NAME_DNAC:$IMAGE_TAG_DNAC
+    - docker push $IMAGE_NAME_ACI:$IMAGE_TAG_ACI
+
+validate_dnac_container:
+  stage: validate
+  needs:
+    - push_image
+  tags:
+    - docker-runner
+  image: $IMAGE_NAME_DNAC:$IMAGE_TAG_DNAC
+  script:
+    - ansible --version >> dnac_container_output.log
+    - pip3 list >> dnac_container_output.log
+  artifacts:
+    paths:
+      - "dnac_container_output.log"
+    when: on_success
+    expire_in: "1 days"
+
+validate_aci_container:
+  stage: validate
+  needs:
+    - push_image
+  tags:
+    - docker-runner
+  image: $IMAGE_NAME_ACI:$IMAGE_TAG_ACI
+  script:
+    - terraform --version >> aci_container_output.log
+    - pip3 list >> aci_container_output.log
+  artifacts:
+    paths:
+      - "aci_container_output.log"
+    when: on_success
+    expire_in: "1 days"
+
+ping_destination:
+  stage: execute
+  needs: 
+    - validate_dnac_container
+    - validate_aci_container
+  tags:
+    - shell-runner
+  script:
+    - ping -c 10 cisco.com > ping_result.log
+  when: manual
+  artifacts:
+    paths:
+      - "ping_result.log"
+    when: on_success
+    expire_in: "1 days" 

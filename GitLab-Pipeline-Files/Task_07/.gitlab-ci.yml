@@ -1,0 +1,75 @@
+variables:
+  IMAGE_NAME_DNAC: $CI_REGISTRY_IMAGE/dnac  
+  IMAGE_TAG_DNAC: "1.0"
+  IMAGE_NAME_ACI: $CI_REGISTRY_IMAGE/aci  
+  IMAGE_TAG_ACI: "1.0"
+
+stages:
+  - build
+  - deploy
+  - test
+
+build_image:
+  stage: build
+  tags:
+    - shell-runner
+  script:
+    - docker build -t $IMAGE_NAME_DNAC:$IMAGE_TAG_DNAC docker/dnac/.
+    - docker build -t $IMAGE_NAME_ACI:$IMAGE_TAG_ACI docker/aci/.
+
+push_image:
+  stage: build
+  needs:
+    - build_image
+  tags:
+    - shell-runner
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker push $IMAGE_NAME_DNAC:$IMAGE_TAG_DNAC
+    - docker push $IMAGE_NAME_ACI:$IMAGE_TAG_ACI
+
+dnac_ansible_job:
+  stage: deploy
+  needs:
+    - push_image
+  tags:
+    - docker-runner
+  image: $IMAGE_NAME_DNAC:$IMAGE_TAG_DNAC
+  environment: DNAC
+  script:
+    - ansible-playbook -i ansible/hosts ansible/01_create-site-hierarchy.yml
+    - ansible-playbook -i ansible/hosts ansible/02_add-devices.yml
+    - ansible-playbook -i ansible/hosts ansible/03_deploy-template.yml
+    - ansible-playbook -i ansible/hosts ansible/04_output-from-device.yml
+  artifacts:
+    untracked: false
+    when: on_success
+    expire_in: "1 days"
+    paths:
+      - "ansible/template_deploy_result.log"
+      - "ansible/command_result.log"
+
+robot_framework_test:
+  stage: test
+  needs:
+    - dnac_ansible_job
+  tags:
+    - docker-runner
+  image: $IMAGE_NAME_DNAC:$IMAGE_TAG_DNAC
+  environment: DNAC
+  before_script:
+    - cd robot_framework
+  script:
+    - robot --outputdir results simple_testcase.robot
+  artifacts:
+    untracked: false
+    when: always
+    expire_in: "1 days"
+    paths:
+      - "robot_framework/results/log.html"
+      - "robot_framework/results/report.html"
+  allow_failure: true
+  retry:
+    max: 2
+    when: script_failure 

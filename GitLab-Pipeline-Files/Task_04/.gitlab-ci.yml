@@ -1,0 +1,11 @@
+stages:
+  - test_shell_runner
+
+test_shell_runner:
+  stage: test_shell_runner
+  tags:
+    - shell-runner
+  script:
+    - echo "$HOSTNAME"
+    - pwd
+    - python --version 

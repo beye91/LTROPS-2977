@@ -1,0 +1,12 @@
+stages:
+  - test_docker_runner
+
+test_docker_runner:
+  image: ubuntu:22.04
+  stage: test_docker_runner
+  tags:
+    - docker-runner
+  script:
+    - echo "$HOSTNAME"
+    - pwd
+    - python --version 
