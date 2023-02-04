@@ -1,0 +1,157 @@
+variables:
+  IMAGE_NAME_DNAC: $CI_REGISTRY_IMAGE/dnac  
+  IMAGE_TAG_DNAC: "1.0"
+  IMAGE_NAME_ACI: $CI_REGISTRY_IMAGE/aci  
+  IMAGE_TAG_ACI: "1.0"
+  TF_ROOT: ${CI_PROJECT_DIR}/terraform
+
+.dependencies_cache:
+  cache:
+    key: "${TF_ROOT}"
+    paths:
+      - "${TF_ROOT}/.terraform"
+    policy: pull
+
+stages:
+  - build
+  - validate
+  - deploy_to_dnac
+  - deploy_to_aci
+  - test
+
+build_image:
+  stage: build
+  tags:
+    - shell-runner
+  script:
+    - docker build -t $IMAGE_NAME_DNAC:$IMAGE_TAG_DNAC docker/dnac/.
+    - docker build -t $IMAGE_NAME_ACI:$IMAGE_TAG_ACI docker/aci/.
+
+push_image:
+  stage: build
+  needs:
+    - build_image
+  tags:
+    - shell-runner
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker push $IMAGE_NAME_DNAC:$IMAGE_TAG_DNAC
+    - docker push $IMAGE_NAME_ACI:$IMAGE_TAG_ACI
+
+validate_ansible_environment:
+  stage: validate
+  needs:
+    - push_image
+  tags:
+    - docker-runner
+  image: $IMAGE_NAME_DNAC:$IMAGE_TAG_DNAC
+  environment: DNAC
+  script:
+    - ansible-lint --profile=min ansible/05_deploy-template.yml
+
+dnac_deploy_job:
+  stage: deploy_to_dnac
+  needs:
+    - validate_ansible_environment
+  tags:
+    - docker-runner
+  image: $IMAGE_NAME_DNAC:$IMAGE_TAG_DNAC
+  environment: DNAC
+  script:
+    - ansible-playbook -i ansible/hosts ansible/05_deploy-template.yml -e "router_name=CSR1000V-01"
+    - ansible-playbook -i ansible/hosts ansible/05_deploy-template.yml -e "router_name=CSR1000V-02"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual 
+
+validate_terraform_environment:
+  needs:
+    - push_image
+  stage: validate
+  image: $IMAGE_NAME_ACI:$IMAGE_TAG_ACI
+  environment: ACI
+  tags:
+    - docker-runner
+  extends: .dependencies_cache
+  cache:
+    policy: pull-push
+  before_script:
+    - cd terraform
+  script:
+      - chmod +x init_file.sh
+      - ./init_file.sh
+      - terraform validate
+
+plan:
+  needs:
+    - validate_terraform_environment
+  stage: deploy_to_aci
+  image: $IMAGE_NAME_ACI:$IMAGE_TAG_ACI
+  environment: ACI
+  tags:
+    - docker-runner
+  extends: .dependencies_cache
+  before_script:
+    - cd terraform
+  script:
+      - chmod +x init_file.sh
+      - ./init_file.sh
+      - terraform plan -out=./output.tfplan
+      - terraform show -no-color -json output.tfplan > plan.json
+  artifacts:
+    paths:
+      - ${TF_ROOT}/plan.json
+    reports:
+      terraform: ${TF_ROOT}/plan.json
+
+apply:
+  needs:
+    - plan
+  stage: deploy_to_aci
+  image: $IMAGE_NAME_ACI:$IMAGE_TAG_ACI
+  environment: ACI
+  tags:
+    - docker-runner
+  extends: .dependencies_cache
+  before_script:
+    - cd terraform
+  script:
+      - chmod +x init_file.sh
+      - ./init_file.sh     
+      - terraform apply --auto-approve
+  when: manual
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual 
+
+robot_framework_test:
+  stage: test
+  tags:
+    - docker-runner
+  image: $IMAGE_NAME_DNAC:$IMAGE_TAG_DNAC
+  environment: DNAC
+  before_script:
+    - cd robot_framework
+  script:
+    - robot --outputdir results testcase_ospf.robot
+  artifacts:
+    untracked: false
+    when: always
+    expire_in: "1 days"
+    paths:
+      - "robot_framework/results/log.html"
+      - "robot_framework/results/report.html"
+  allow_failure: true
+  retry:
+    max: 2
+    when: script_failure
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual 
